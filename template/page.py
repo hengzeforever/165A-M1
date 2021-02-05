@@ -27,10 +27,19 @@ class Page:
     def write(self, value):  #what is value?
         start=self.num_records*8
         end=(self.num_records+1)*8
-        if (value != None):
+        if value != None:
             self.data[start:end]=value.to_bytes(8,'big')
-            self.num_records += 1
-        
+        self.num_records += 1
+    
+    def len(self):
+        len = 0
+        for i in range(512):
+            if self.data[i*8:(i+1)*8] != (0).to_bytes(8,'big'):
+                len += 1
+            else:
+                return len
+        return len
+
 class BasePage:
     
     def __init__(self, num_columns):
@@ -51,7 +60,14 @@ class PageRange:
         
     def has_capacity(self):
         return len(self.basePageList) < 16 | self.basePageList[-1].has_capacity()
+
+    def create_NewBasePage(self):
+        self.basePageList.append(BasePage(self.num_columns))
+        return True
         
+    def create_NewTailPage(self):
+        self.tailPageList.append(BasePage(self.num_columns))
+        return True
         
         
 
