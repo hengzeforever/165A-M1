@@ -16,19 +16,19 @@ class Page:
 
     def __init__(self):
         self.num_records = 0
-        self.data = bytearray(4096)  #creates an array of that size and initialized with null bytes.
+        self.data = bytearray(PAGE_SIZE)  # Creates an array of that size and initialized with 0
 
     def has_capacity(self):
-        if self.num_records < MAX_NUM_RECORD:  #not sure what about at the begining when we first initialize a page. 
+        if self.num_records < MAX_NUM_RECORD: 
             return True 
         else:
             return False
 
-    def write(self, value):  #what is value?
-        start=self.num_records*8
-        end=(self.num_records+1)*8
+    def write(self, value):
+        start = self.num_records * INT_SIZE
+        end = (self.num_records + 1) * INT_SIZE
         if value != None:
-            self.data[start:end]=value.to_bytes(8,'big')
+            self.data[start:end] = value.to_bytes(INT_SIZE,'big')
         self.num_records += 1
     
     def len(self):
@@ -39,7 +39,7 @@ class BasePage:
     def __init__(self, num_columns):
         self.basePage = []
         self.num_columns = num_columns
-        for i in range(4 + self.num_columns):
+        for i in range(INTERNAL_COL_NUM + self.num_columns):
             self.basePage.append(Page())
             
     def has_capacity(self):
@@ -50,10 +50,10 @@ class PageRange:
     def __init__(self, num_columns):
         self.num_columns = num_columns
         self.basePageList = [BasePage(self.num_columns)]
-        self.tailPageList = [BasePage(self.num_columns)] # tail page is essentially the same as base page
+        self.tailPageList = [BasePage(self.num_columns)] # Tail page is essentially the same as base page
         
     def has_capacity(self):
-        return len(self.basePageList) < 16 | self.basePageList[-1].has_capacity()
+        return len(self.basePageList) < BASE_PAGE_PER_PAGE_RANGE | self.basePageList[-1].has_capacity()
 
     def create_NewBasePage(self):
         self.basePageList.append(BasePage(self.num_columns))

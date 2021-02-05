@@ -7,9 +7,15 @@ and the constant values used in the code. It is good practice to organize such
 information into a Singleton object accessible from every file in the project. This class
 will find more use when implementing persistence in the next milestone.
 '''
-
+# Sizes
 PAGE_SIZE = 4096
 INT_SIZE = 8
-PAGE_RANGE_SIZE = 65536
-MAX_NUM_RECORD = PAGE_SIZE / INT_SIZE
-BASE_PAGE_PER_PAGE_RANGE = PAGE_RANGE_SIZE / PAGE_SIZE
+MAX_NUM_RECORD = 512
+BASE_PAGE_PER_PAGE_RANGE = 16
+INTERNAL_COL_NUM = 4
+
+# Indices
+INDIRECTION_COLUMN = 0
+RID_COLUMN = 1
+TIMESTAMP_COLUMN = 2
+SCHEMA_ENCODING_COLUMN = 3

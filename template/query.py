@@ -1,6 +1,7 @@
 from template.table import Table, Record
 from template.index import Index
 from template.page import Page, BasePage, PageRange
+from template.config import *
 import datetime
 '''
 The Query class provides standard SQL operations such as insert, select,
@@ -24,7 +25,30 @@ class Query:
     def __init__(self, table):
         self.table = table
         pass
+    
+    # Get the newest column values for a base record 
+    def getNewestColumns(self, baseRID):
+        newestColumns = []
+        baseRecord = self.table.baseRIDToRecord(baseRID)
+        baseIndirect = baseRecord[INDIRECTION_COLUMN]
 
+        if baseIndirect == 0:
+            # Base record is has no update
+            newestColumns = baseRecord[4:]
+        else:
+            # Get the latest update
+            tailRID = baseIndirect
+            tailRecord = self.table.tailRIDToRecord(tailRID)
+            binarySchema = bin(baseRecord[SCHEMA_ENCODING_COLUMN])[2:]
+            schema_encoding = "0" * (self.table.num_columns-len(binarySchema)) + binarySchema
+            for i in range(self.table.num_columns):
+                if schema_encoding[i] == "1":
+                    val = tailRecord[i+INTERNAL_COL_NUM]
+                else:
+                    val = baseRecord[i+INTERNAL_COL_NUM]
+                newestColumns.append(val)
+        return newestColumns
+        
     """
     # internal Method
     # Read a record with specified key
@@ -36,24 +60,24 @@ class Query:
         baseRID = self.table.keyToBaseRID[key]
         baseLocation = self.table.baseRIDToLocation(baseRID)
         baseRecord = self.table.baseRIDToRecord(baseRID)
-        baseIndirect = baseRecord[0]
+        baseIndirect = baseRecord[INDIRECTION_COLUMN]
 
         # Set baseRID to zero
-        self.table.baseWriteByte(0, baseLocation, 1)
+        self.table.baseWriteByte(0, baseLocation, RID_COLUMN)
         
         # Set all associated tailRID to zero
         if (baseIndirect != 0):
             tailRID = baseIndirect
             tailRecord = self.table.tailRIDToRecord(tailRID)
-            tailIndirect = tailRecord[0]
+            tailIndirect = tailRecord[INDIRECTION_COLUMN]
             while tailIndirect != 0:
                 tailLocaiton = self.table.tailPage_lib[tailRID]
-                self.table.tailWriteByte(0, tailLocaiton, 1)
+                self.table.tailWriteByte(0, tailLocaiton, RID_COLUMN)
                 tailRID = tailIndirect
                 tailRecord = self.table.tailRIDToRecord(tailRID)
-                tailIndirect = tailRecord[0]
+                tailIndirect = tailRecord[INDIRECTION_COLUMN]
             tailLocaiton = self.table.tailPage_lib[tailRID]
-            self.table.tailWriteByte(0, tailLocaiton, 1)
+            self.table.tailWriteByte(0, tailLocaiton, RID_COLUMN)
         return True
 
 
@@ -94,13 +118,9 @@ class Query:
             curBasePage.basePage[i].write(baseRecord[i])
         
         # Update table's private variables
-        self.table.keyToBaseRID[baseRecord[self.table.key + 4]] = baseRID
-        #add to index
+        self.table.keyToBaseRID[baseRecord[self.table.key + INTERNAL_COL_NUM]] = baseRID
         self.table.index.insertIndex(self.table.key,columns[self.table.key],baseRID)
-
         self.table.baseRID += 1
-        
-        
         return True
     
     """
@@ -114,40 +134,13 @@ class Query:
     def select(self, key, column, query_columns):
         listSelect = []
         recordSelect = []
-
-        # Get base record
-        if key in self.table.keyToBaseRID.keys():
-            baseRID = self.table.keyToBaseRID[key]
-            baseRecord = self.table.baseRIDToRecord(baseRID)
-
-        #
-        baseIndirect = baseRecord[0]
-        if baseIndirect == 0:
-            # Base record is has no update
-            for i in range(len(query_columns)):
-                if query_columns[i] == 1:
-                    val = baseRecord[i+4]
-                    recordSelect.append(val)
-                else:
-                    recordSelect.append(None)
-        else:
-            # Get the latest update
-            tailRID = baseIndirect
-            tailRecord = self.table.tailRIDToRecord(tailRID)
-            binarySchema = bin(baseRecord[3])[2:]
-            schema_encoding = "0" * (len(query_columns)-len(binarySchema)) + binarySchema
-            #print(schema_encoding)
-            #print(baseRecord)
-            #print(tailRecord)
-            for i in range(len(query_columns)):
-                if query_columns[i] == 1:
-                    if schema_encoding[i] == "1":
-                        val = tailRecord[i+4]
-                    else:
-                        val = baseRecord[i+4]
-                    recordSelect.append(val)
-                else:
-                    recordSelect.append(None)
+        baseRID = self.table.keyToBaseRID[key]
+        newestColumns = self.getNewestColumns(baseRID)
+        for i in range(len(query_columns)):
+            if query_columns[i] == 0:
+                recordSelect.append(None)
+            else:
+                recordSelect.append(newestColumns[i])
         listSelect.append(Record(baseRID, key, recordSelect))
         return listSelect
 
@@ -170,8 +163,10 @@ class Query:
         time = datetime.datetime.now()
         updateEncoding = ""
         columns = list(columns)
-        #print('\n')
-        #print("Before update:", baseRecord, "columns:", columns)
+        '''
+        print('\n')
+        print("Before update:", baseRecord, "columns:", columns)
+        '''
 
         # Create shorter names
         curPageRange = self.table.pageRanges[pageRange_index]
@@ -183,17 +178,19 @@ class Query:
             curTailPage = curPageRange.tailPageList[-1]
         
         # Prepare values for tail record
-        baseRecordIndirect = baseRecord[0]
+        baseRecordIndirect = baseRecord[INDIRECTION_COLUMN]
         if baseRecordIndirect != 0:
             # Current tail record is not the first update to the base record
             lastTailRID = baseRecordIndirect
             tailIndirect = lastTailRID
             lastTailRecord = self.table.tailRIDToRecord(lastTailRID)
-            #print("lastTailRecord", lastTailRecord)
-            #if (tailRID == 3):
-                #raise EnvironmentError
+            '''
+            print("lastTailRecord", lastTailRecord)
+            if (tailRID == 3):
+                raise EnvironmentError
+            '''
             # Cumulate schema encoding for tail record based on the last tail record
-            binaryLastScheme = bin(lastTailRecord[3])[2:]
+            binaryLastScheme = bin(lastTailRecord[SCHEMA_ENCODING_COLUMN])[2:]
             lastScheme = "0" * (len(columns)-len(binaryLastScheme)) + binaryLastScheme
             for i in range(len(columns)):
                 if (columns[i] == None) & (lastScheme[i] == "0"):
@@ -216,23 +213,29 @@ class Query:
                     updateEncoding += "1"
 
         # Write tail record into tail page
-        tailRecord = [tailIndirect, tailRID, int(time.strftime("%Y%m%d%H%M%S")), int(updateEncoding,2)] + columns
-        #print("current tail record", tailRecord)
+        tailRecord = [tailIndirect, tailRID, int(time.strftime("%Y%m%d%H%M%S")), int(updateEncoding, 2)] + columns
+        '''print("current tail record", tailRecord)'''
         for i in range(len(tailRecord)):
             curTailPage.basePage[i].write(tailRecord[i])
         
         # Update base record's indirection column and schema encoding column
-        self.table.baseWriteByte(tailRID, baseLocation, 0)
-        self.table.baseWriteByte(int(updateEncoding, 2), baseLocation, 3)
-
+        self.table.baseWriteByte(tailRID, baseLocation, INDIRECTION_COLUMN)
+        self.table.baseWriteByte(int(updateEncoding, 2), baseLocation, SCHEMA_ENCODING_COLUMN)
+        '''
+        # Update columns values for base record
+        for i in range(len(columns)):
+            if updateEncoding[i] != "0":
+                self.table.baseWriteByte(columns[i], baseLocation, i+4) 
+        '''
         # Update table's private variables
         tailPageList_index = len(curPageRange.tailPageList) - 1
         offset_index = curTailPage.basePage[0].len() - 1
         self.table.tailPage_lib[tailRID] = [pageRange_index, tailPageList_index, offset_index]
         self.table.tailRID += 1
-
-        #baseRecord = self.table.baseRIDToRecord(baseRID)
+        '''
+        baseRecord = self.table.baseRIDToRecord(baseRID)
         #print("After update:", baseRecord, "columns:", columns,'\n')
+        '''
         return True
         
     """
@@ -246,20 +249,16 @@ class Query:
     def sum(self, start_range, end_range, aggregate_column_index):
         listrids = self.table.index.locate_range(start_range,end_range, self.table.key)
         sum = 0
-        #if no rid in this range
         if len(listrids) == 0:
             return False
-        for rid in listrids:
-            #print("rid is",rid)
-            baseRecord = self.table.baseRIDToRecord(rid)
-            sum += baseRecord[aggregate_column_index + 4]
-        return sum
+        else:
+            for rid in listrids:
+                newestColumns = self.getNewestColumns(rid)
+                sum += newestColumns[aggregate_column_index]
+            return sum
 
     """
-    incremenets one
-    
-    
-     column of the record
+    incremenets one column of the record
     this implementation should work if your select and update queries already work
     :param key: the primary of key of the record to increment
     :param column: the column to increment
