@@ -91,7 +91,6 @@ class Table:
                 [offset_index*8:(offset_index+1)*8], 'big'))
         return tailRecord
     
-    
     def baseWriteByte(self, value, location, columnNum):
         pageRange_index = location[0]
         basePageList_index = location[1]
@@ -101,15 +100,14 @@ class Table:
                 value.to_bytes(8, 'big')
         return True
 
-    def printRecord(self, rid):
-        pass
-
-    '''
-    def getPageR(self,rid): #given rid return the page range the rid record is at
-        print("PageR", rid//MAX_NUM_RECORD//BASE_PAGE_PER_PAGE_RANGE)
-        print(type(rid//MAX_NUM_RECORD//BASE_PAGE_PER_PAGE_RANGE))
-        return int(rid//MAX_NUM_RECORD//BASE_PAGE_PER_PAGE_RANGE)
-    '''
+    def tailWriteByte(self, value, location, columnNum):
+        pageRange_index = location[0]
+        tailPageList_index = location[1]
+        offset_index = location[2]
+        self.pageRanges[pageRange_index].tailPageList[tailPageList_index] \
+            .basePage[columnNum].data[offset_index*8:(offset_index+1)*8] = \
+                value.to_bytes(8, 'big')
+        return True
 
     def __merge(self):
         pass
