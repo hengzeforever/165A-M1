@@ -28,10 +28,10 @@ class Index:
         #return key % len(hash_table)
 
     def insertIndex(self,column_index,key_val,rid):
-        if(self.indices[column_index]== None):
-            self.indices[column_index]=dict() #make a dictionary {key val:rid}
+        if self.indices[column_index] == None:
+            self.indices[column_index] = dict() #make a dictionary {key val:rid}
 
-        self.indices[column_index][key_val]=rid  
+        self.indices[column_index][key_val] = rid  
         
     """
     # returns the location of all records with the given value on column "column"
@@ -49,9 +49,9 @@ class Index:
     """
 
     def locate_range(self, begin, end, column):
-        ret_val =[]
+        ret_val = []
         for key in self.indices[column]:
-            if key>=begin and key<=end:
+            if key >= begin and key <= end:
                 ret_val.append(self.indices[column].get(key))
         #print("ret_val=",ret_val)
         return ret_val

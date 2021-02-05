@@ -32,13 +32,7 @@ class Page:
         self.num_records += 1
     
     def len(self):
-        len = 0
-        for i in range(512):
-            if self.data[i*8:(i+1)*8] != (0).to_bytes(8,'big'):
-                len += 1
-            else:
-                return len
-        return len
+        return self.num_records
 
 class BasePage:
     

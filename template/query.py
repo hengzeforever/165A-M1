@@ -136,9 +136,9 @@ class Query:
             tailRecord = self.table.tailRIDToRecord(tailRID)
             binarySchema = bin(baseRecord[3])[2:]
             schema_encoding = "0" * (len(query_columns)-len(binarySchema)) + binarySchema
-            print(schema_encoding)
-            print(baseRecord)
-            print(tailRecord)
+            #print(schema_encoding)
+            #print(baseRecord)
+            #print(tailRecord)
             for i in range(len(query_columns)):
                 if query_columns[i] == 1:
                     if schema_encoding[i] == "1":
@@ -170,7 +170,8 @@ class Query:
         time = datetime.datetime.now()
         updateEncoding = ""
         columns = list(columns)
-        print("Before update:", baseRecord, "columns:", columns)
+        #print('\n')
+        #print("Before update:", baseRecord, "columns:", columns)
 
         # Create shorter names
         curPageRange = self.table.pageRanges[pageRange_index]
@@ -188,7 +189,7 @@ class Query:
             lastTailRID = baseRecordIndirect
             tailIndirect = lastTailRID
             lastTailRecord = self.table.tailRIDToRecord(lastTailRID)
-            print("lastTailRecord", lastTailRecord)
+            #print("lastTailRecord", lastTailRecord)
             #if (tailRID == 3):
                 #raise EnvironmentError
             # Cumulate schema encoding for tail record based on the last tail record
@@ -215,8 +216,8 @@ class Query:
                     updateEncoding += "1"
 
         # Write tail record into tail page
-        tailRecord = [tailRID, tailIndirect, int(time.strftime("%Y%m%d%H%M%S")), int(updateEncoding,2)] + columns
-        print("current tail record", tailRecord)
+        tailRecord = [tailIndirect, tailRID, int(time.strftime("%Y%m%d%H%M%S")), int(updateEncoding,2)] + columns
+        #print("current tail record", tailRecord)
         for i in range(len(tailRecord)):
             curTailPage.basePage[i].write(tailRecord[i])
         
@@ -230,8 +231,8 @@ class Query:
         self.table.tailPage_lib[tailRID] = [pageRange_index, tailPageList_index, offset_index]
         self.table.tailRID += 1
 
-        baseRecord = self.table.baseRIDToRecord(baseRID)
-        print("After update:", baseRecord, "columns:", columns,'\n')
+        #baseRecord = self.table.baseRIDToRecord(baseRID)
+        #print("After update:", baseRecord, "columns:", columns,'\n')
         return True
         
     """
@@ -243,15 +244,15 @@ class Query:
     # Returns False if no record exists in the given range
     """
     def sum(self, start_range, end_range, aggregate_column_index):
-        listrids=self.table.index.locate_range(start_range,end_range,self.table.key)
+        listrids = self.table.index.locate_range(start_range,end_range, self.table.key)
         sum = 0
         #if no rid in this range
-        if (len(listrids)==0):
+        if len(listrids) == 0:
             return False
         for rid in listrids:
             #print("rid is",rid)
-            baseRecord=self.table.baseRIDToRecord(rid)
-            sum += baseRecord[aggregate_column_index+4]
+            baseRecord = self.table.baseRIDToRecord(rid)
+            sum += baseRecord[aggregate_column_index + 4]
         return sum
 
     """
