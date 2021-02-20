@@ -34,7 +34,7 @@ class Table:
         self.name = name
         self.key = key
         self.num_columns = num_columns
-        self.page_directory = {}
+        #self.page_directory = {}
         self.tailPage_lib = {} # Store tailRID: tailLocation, so that we can find a tail record
         self.index = Index(self)
         self.pageRanges = [PageRange(self.num_columns)]
