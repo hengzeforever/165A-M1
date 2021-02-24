@@ -1,6 +1,7 @@
 from template.page import PageRange
 from template.index import Index
 from template.config import *
+from template.bufferpool import BufferPool
 from time import time
 
 '''
@@ -34,6 +35,7 @@ class Table:
         self.name = name
         self.key = key
         self.num_columns = num_columns
+        self.bufferpool = BufferPool()
         #self.page_directory = {}
         self.tailPage_lib = {} # Store tailRID: tailLocation, so that we can find a tail record
         self.index = Index(self)
@@ -47,7 +49,7 @@ class Table:
         # Unused bit vector definition for RID(May be used in M2 M3):
         # RID is a list of integer storing relevant info about a record(location, deleted)
         # Store RID in page ---> Use 8 bytes where the first 4 bytes are used to define the location of a record:
-        # 1 byte for pangeRange_index, 1 byte for pageList_index, 1 byte for offset_index, 
+        # 1 byte for pageRange_index, 1 byte for pageList_index, 1 byte for offset_index, 
         # 1 byte for deleted or not(not deleted:0 deleted:1)
         '''
 
@@ -66,7 +68,7 @@ class Table:
     # Given a baseRID return a list of values in base record
     # The way to access a value using a location: 
     # e.g. value = int.from_bytes(pageRanges[pageRange_index].basePageList
-    # [basePageList_index].basePage[columnNum].data[offset_index*INT_SIZE:(offset_index+1)*INT_SIZE], 'big')
+    # [basePageList_index].colPages[columnNum].data[offset_index*INT_SIZE:(offset_index+1)*INT_SIZE], 'big')
     def baseRIDToRecord(self, baseRID):
         location = self.baseRIDToLocation(baseRID)
         pageRange_index = location[0]
@@ -74,7 +76,7 @@ class Table:
         offset_index = location[2]
         baseRecord = []
         for i in range(INTERNAL_COL_NUM+self.num_columns):
-            baseRecord.append(int.from_bytes(self.pageRanges[pageRange_index].basePageList[basePageList_index].basePage[i].data \
+            baseRecord.append(int.from_bytes(self.pageRanges[pageRange_index].basePageList[basePageList_index].colPages[i].data \
                 [offset_index*INT_SIZE:(offset_index+1)*INT_SIZE], 'big'))
         return baseRecord
     
@@ -86,7 +88,7 @@ class Table:
         offset_index = location[2]
         tailRecord = []
         for i in range(INTERNAL_COL_NUM+self.num_columns):
-            tailRecord.append(int.from_bytes(self.pageRanges[pageRange_index].tailPageList[tailPageList_index].basePage[i].data \
+            tailRecord.append(int.from_bytes(self.pageRanges[pageRange_index].tailPageList[tailPageList_index].colPages[i].data \
                 [offset_index*INT_SIZE:(offset_index+1)*INT_SIZE], 'big'))
         return tailRecord
     
@@ -96,7 +98,7 @@ class Table:
         basePageList_index = location[1]
         offset_index = location[2]
         self.pageRanges[pageRange_index].basePageList[basePageList_index] \
-            .basePage[columnNum].data[offset_index*INT_SIZE:(offset_index+1)*INT_SIZE] = \
+            .colPages[columnNum].data[offset_index*INT_SIZE:(offset_index+1)*INT_SIZE] = \
                 value.to_bytes(INT_SIZE, 'big')
         return True
 
@@ -106,10 +108,10 @@ class Table:
         tailPageList_index = location[1]
         offset_index = location[2]
         self.pageRanges[pageRange_index].tailPageList[tailPageList_index] \
-            .basePage[columnNum].data[offset_index*INT_SIZE:(offset_index+1)*INT_SIZE] = \
+            .colPages[columnNum].data[offset_index*INT_SIZE:(offset_index+1)*INT_SIZE] = \
                 value.to_bytes(INT_SIZE, 'big')
         return True
 
-    def __merge(self):
+    def merge(self):
         pass
  

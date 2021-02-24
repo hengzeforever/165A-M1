@@ -1,4 +1,7 @@
 from template.table import Table
+from os import path, chdir, getcwd
+import pickle
+# Threading not implemented yet
 
 '''
 The Database class is a general interface to the database and handles high-level
@@ -16,12 +19,19 @@ class Database():
         self.tables = {}
         pass
 
-    # Not required for milestone1
-    def open(self, path):
-        pass
+    def open(self, workPath):
+        if path.exists('database'):
+            with open('database', 'rb') as dbfile:
+                self.tables = pickle.load(dbfile)   
+        else:
+            # Do nothing if database file has not been generated
+            pass
 
     def close(self):
-        pass
+        for table in self.tables:
+            table.bufferpool.flushDirty()
+        with open('database', 'wb') as dbfile:
+            pickle.dump(self.tables, dbfile, pickle.HIGHEST_PROTOCOL)
 
     """
     # Creates a new table

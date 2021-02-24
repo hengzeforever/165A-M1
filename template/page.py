@@ -37,13 +37,13 @@ class Page:
 class BasePage:
     
     def __init__(self, num_columns):
-        self.basePage = []
+        self.colPages = []
         self.num_columns = num_columns
         for i in range(INTERNAL_COL_NUM + self.num_columns):
-            self.basePage.append(Page())
+            self.colPages.append(Page())
             
     def has_capacity(self):
-        return self.basePage[0].has_capacity()
+        return self.colPages[0].has_capacity()
 
 class PageRange:
     
