@@ -35,12 +35,11 @@ class Table:
         self.name = name
         self.key = key
         self.num_columns = num_columns
-        self.bufferpool = BufferPool()
+        self.bufferpool = BufferPool(self.num_columns)
         #self.page_directory = {}
         self.tailPage_lib = {} # Store tailRID: tailLocation, so that we can find a tail record
         self.index = Index(self)
-        self.pageRanges = [PageRange(self.num_columns)]
-        self.keyToBaseRID = {} # Store key: baseRID, so that we can find a base record
+        self.num_PageRanges = 1
 
         # baseRID and tailRID are initialized to 1, 0 is for deleted record
         self.baseRID = 1
@@ -54,9 +53,12 @@ class Table:
         '''
 
     def create_NewPageRange(self):
-        self.pageRanges.append(PageRange(self.num_columns))
+        emptyPageRange = self.bufferpool.getEmptyPage()
+        emptyPageRange.pageRange_Index = self.num_PageRanges
+        emptyPageRange.pageRange = PageRange(self.num_columns)
+        self.num_PageRanges += 1
         return True
-
+        
     # Find the locaion of a base record, location is a list of indices locating a base record
     def baseRIDToLocation(self, baseRID):
         pageRange_index = (baseRID - 1) // (MAX_NUM_RECORD * BASE_PAGE_PER_PAGE_RANGE)
@@ -74,10 +76,13 @@ class Table:
         pageRange_index = location[0]
         basePageList_index = location[1]
         offset_index = location[2]
+        
+        bufferPageRange = self.bufferpool.getPageRange(pageRange_index)
         baseRecord = []
         for i in range(INTERNAL_COL_NUM+self.num_columns):
-            baseRecord.append(int.from_bytes(self.pageRanges[pageRange_index].basePageList[basePageList_index].colPages[i].data \
+            baseRecord.append(int.from_bytes(bufferPageRange.pageRange.basePageList[basePageList_index].colPages[i].data \
                 [offset_index*INT_SIZE:(offset_index+1)*INT_SIZE], 'big'))
+            
         return baseRecord
     
     # Given a tailRID return a list of values in tail record
@@ -86,28 +91,36 @@ class Table:
         pageRange_index = location[0]
         tailPageList_index = location[1]
         offset_index = location[2]
+
+        bufferPageRange = self.bufferpool.getPageRange(pageRange_index)
         tailRecord = []
         for i in range(INTERNAL_COL_NUM+self.num_columns):
-            tailRecord.append(int.from_bytes(self.pageRanges[pageRange_index].tailPageList[tailPageList_index].colPages[i].data \
+            tailRecord.append(int.from_bytes(bufferPageRange.pageRange.tailPageList[tailPageList_index].colPages[i].data \
                 [offset_index*INT_SIZE:(offset_index+1)*INT_SIZE], 'big'))
         return tailRecord
     
     # Overwrite a value in base record
-    def baseWriteByte(self, value, location, columnNum):
+    def baseWriteByte(self, value, baseRID, columnNum):
+        location = self.baseRIDToLocation(baseRID)
         pageRange_index = location[0]
         basePageList_index = location[1]
         offset_index = location[2]
-        self.pageRanges[pageRange_index].basePageList[basePageList_index] \
+
+        bufferPageRange = self.bufferpool.getPageRange(pageRange_index)
+        bufferPageRange.pageRange.basePageList[basePageList_index] \
             .colPages[columnNum].data[offset_index*INT_SIZE:(offset_index+1)*INT_SIZE] = \
                 value.to_bytes(INT_SIZE, 'big')
         return True
 
     # Overwrite a value in tail record
-    def tailWriteByte(self, value, location, columnNum):
+    def tailWriteByte(self, value, tailRID, columnNum):
+        location = self.tailPage_lib[tailRID]
         pageRange_index = location[0]
         tailPageList_index = location[1]
         offset_index = location[2]
-        self.pageRanges[pageRange_index].tailPageList[tailPageList_index] \
+
+        bufferPageRange = self.bufferpool.getPageRange(pageRange_index)
+        bufferPageRange.pageRange.tailPageList[tailPageList_index] \
             .colPages[columnNum].data[offset_index*INT_SIZE:(offset_index+1)*INT_SIZE] = \
                 value.to_bytes(INT_SIZE, 'big')
         return True

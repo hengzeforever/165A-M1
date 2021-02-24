@@ -40,9 +40,12 @@ class Database():
     :param key: int             #Index of table key in columns
     """
     def create_table(self, name, num_columns, key):
-        table = Table(name, num_columns, key)
-        self.tables[name]=table
-        return table
+        if name in self.tables:
+            return self.get_table(name)
+        else:
+            table = Table(name, num_columns, key)
+            self.tables[name]=table
+            return table
 
     """
     # Deletes the specified table

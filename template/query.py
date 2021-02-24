@@ -57,13 +57,18 @@ class Query:
     """
     def delete(self, primary_key):
         # Get base record info
-        baseRID = self.table.keyToBaseRID[primary_key]
+        baseRID = self.table.index.locate(self.table.key, primary_key)
         baseLocation = self.table.baseRIDToLocation(baseRID)
+        pageRange_Index = baseLocation[0]
         baseRecord = self.table.baseRIDToRecord(baseRID)
         baseIndirect = baseRecord[INDIRECTION_COLUMN]
 
+        # Load page range on buffer pool and get it
+        bufferPageRange = self.table.bufferpool.getPageRange(pageRange_Index)
+        bufferPageRange.pin += 1
+
         # Set baseRID to zero
-        self.table.baseWriteByte(0, baseLocation, RID_COLUMN)
+        self.table.baseWriteByte(0, baseRID, RID_COLUMN)
         
         # Set all associated tailRID to zero
         if (baseIndirect != 0):
@@ -71,13 +76,14 @@ class Query:
             tailRecord = self.table.tailRIDToRecord(tailRID)
             tailIndirect = tailRecord[INDIRECTION_COLUMN]
             while tailIndirect != 0:
-                tailLocaiton = self.table.tailPage_lib[tailRID]
-                self.table.tailWriteByte(0, tailLocaiton, RID_COLUMN)
+                self.table.tailWriteByte(0, tailRID, RID_COLUMN)
                 tailRID = tailIndirect
                 tailRecord = self.table.tailRIDToRecord(tailRID)
                 tailIndirect = tailRecord[INDIRECTION_COLUMN]
-            tailLocaiton = self.table.tailPage_lib[tailRID]
-            self.table.tailWriteByte(0, tailLocaiton, RID_COLUMN)
+            self.table.tailWriteByte(0, tailRID, RID_COLUMN)
+        
+        bufferPageRange.dirty = 1
+        bufferPageRange.pin -= 1
         return True
 
 
@@ -89,8 +95,8 @@ class Query:
     def insert(self, *columns):
         '''record example:[0, 0, 20210131111207, 0, 906659671, 93, 0, 0, 0]'''
         # Check if key is duplicated
-        if columns[self.table.key] in self.table.keyToBaseRID:
-            return False
+        #if columns[self.table.key] in self.table.index.indices[self.table.key]:
+           # return False
 
         # Initialize columns for base record
         baseIndirect = 0
@@ -100,13 +106,20 @@ class Query:
         columns = list(columns)
         
         # Create shorter names
-        curPageRange = self.table.pageRanges[-1]
+        bufferPageRange = self.table.bufferpool.getPageRange(self.table.num_PageRanges-1)
+        curPageRange = bufferPageRange.pageRange
         curBasePage = curPageRange.basePageList[-1]
+
+        # Pin
+        bufferPageRange.pin += 1
 
         # Open a new page range or new base page if there isn't enough space
         if curPageRange.has_capacity() == False:
+            bufferPageRange.pin -= 1
             self.table.create_NewPageRange()
-            curPageRange = self.table.pageRanges[-1]
+            bufferPageRange = self.table.bufferpool.getPageRange(self.table.num_PageRanges-1)
+            bufferPageRange.pin += 1
+            curPageRange = bufferPageRange.pageRange
             curBasePage = curPageRange.basePageList[-1]
         elif curBasePage.has_capacity() == False:
             curPageRange.create_NewBasePage()
@@ -115,13 +128,15 @@ class Query:
         # Write the base record into basepage
         baseRecord = [baseIndirect, baseRID, int(time.strftime("%Y%m%d%H%M%S")), int(schema_encoding, 2)] + columns
         for i in range(len(baseRecord)):
-            curBasePage.basePage[i].write(baseRecord[i])
+            curBasePage.colPages[i].write(baseRecord[i])
         
         # Update table's private variables
-        self.table.keyToBaseRID[baseRecord[self.table.key + INTERNAL_COL_NUM]] = baseRID
         self.table.index.insertIndex(self.table.key,columns[self.table.key],baseRID)
-
         self.table.baseRID += 1
+        
+        # Update bufferPageRange
+        bufferPageRange.dirty = 1
+        bufferPageRange.pin -= 1
         return True
     
     """
@@ -138,6 +153,13 @@ class Query:
         recordSelect = []
         if column == self.table.key: #search by primary key column
             baseRID = self.table.index.locate(column,index_key)
+
+            # Pin
+            baseLocation =self.table.baseRIDToLocation(baseRID)
+            pageRange_Index = baseLocation[0]
+            bufferPageRange = self.table.bufferpool.getPageRange(pageRange_Index)
+            bufferPageRange.pin += 1
+
             newestColumns = self.getNewestColumns(baseRID)
             for i in range(len(query_columns)):
                 if query_columns[i] == 0:
@@ -145,10 +167,20 @@ class Query:
                 else:
                     recordSelect.append(newestColumns[i])
             listSelect.append(Record(baseRID, index_key, recordSelect))
+
+            # Unpin
+            bufferPageRange.pin -= 1
             return listSelect
         else: #searching by other column
             self.table.index.create_index(column)
             baseRID = self.table.index.locate(column,index_key)
+
+            # Pin
+            baseLocation =self.table.baseRIDToLocation(baseRID)
+            pageRange_Index = baseLocation[0]
+            bufferPageRange = self.table.bufferpool.getPageRange(pageRange_Index)
+            bufferPageRange.pin += 1
+
             newestColumns=[]
             for count,baserid in enumerate(baseRID):
                 newestColumns.append(self.getNewestColumns(baserid))
@@ -158,6 +190,9 @@ class Query:
                     else:
                         recordSelect.append(newestColumns[count][i])
                 listSelect.append(Record(baserid, index_key, recordSelect))
+            
+            # Unpin
+            bufferPageRange.pin -= 1
             return listSelect
     """             
         listSelect = []
@@ -195,9 +230,9 @@ class Query:
     
     def update(self, primary_key, *columns):
         # Get associated base record info
-        baseRID = self.table.keyToBaseRID[primary_key]
+        baseRID = self.table.index.locate(self.table.key, primary_key)
         baseLocation = self.table.baseRIDToLocation(baseRID)
-        pageRange_index = baseLocation[0]
+        pageRange_Index = baseLocation[0]
         baseRecord = self.table.baseRIDToRecord(baseRID)
 
         # Initialize columns for tailRecord
@@ -211,8 +246,12 @@ class Query:
         print("Before update:", baseRecord, "columns:", columns)
         '''
         # Create shorter names
-        curPageRange = self.table.pageRanges[pageRange_index]
+        bufferPageRange = self.table.bufferpool.getPageRange(pageRange_Index)
+        curPageRange = bufferPageRange.pageRange
         curTailPage = curPageRange.tailPageList[-1]
+
+        # Pin
+        bufferPageRange.pin += 1
 
         # Open a new tail page if there isn't enough space
         if curPageRange.tailPageList[-1].has_capacity() == False:
@@ -255,27 +294,31 @@ class Query:
         # Write tail record into tail page
         tailRecord = [tailIndirect, tailRID, int(time.strftime("%Y%m%d%H%M%S")), int(updateEncoding, 2)] + columns
         for i in range(len(tailRecord)):
-            curTailPage.basePage[i].write(tailRecord[i])
+            curTailPage.colPages[i].write(tailRecord[i])
         
         # Update base record's indirection column and schema encoding column
-        self.table.baseWriteByte(tailRID, baseLocation, INDIRECTION_COLUMN)
-        self.table.baseWriteByte(int(updateEncoding, 2), baseLocation, SCHEMA_ENCODING_COLUMN)
+        self.table.baseWriteByte(tailRID, baseRID, INDIRECTION_COLUMN)
+        self.table.baseWriteByte(int(updateEncoding, 2), baseRID, SCHEMA_ENCODING_COLUMN)
         '''
         # Update columns values for base record
         for i in range(len(columns)):
             if updateEncoding[i] != "0":
-                self.table.baseWriteByte(columns[i], baseLocation, i+4) 
+                self.table.baseWriteByte(columns[i], baseRID, i+4) 
         '''
         # Update table's private variables
         tailPageList_index = len(curPageRange.tailPageList) - 1
-        offset_index = curTailPage.basePage[0].len() - 1
-        self.table.tailPage_lib[tailRID] = [pageRange_index, tailPageList_index, offset_index]
+        offset_index = curTailPage.colPages[0].len() - 1
+        self.table.tailPage_lib[tailRID] = [pageRange_Index, tailPageList_index, offset_index]
         self.table.tailRID += 1
 
         #Update index 2/22
         for col_num, col in enumerate(columns):
             if col != None: 
                 self.table.index.indices[col_num][col]=baseRID
+        
+        # Update buffer page range
+        bufferPageRange.dirty = 1
+        bufferPageRange.pin -= 1
             
         '''
         baseRecord = self.table.baseRIDToRecord(baseRID)

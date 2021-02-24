@@ -1,4 +1,5 @@
 from template.config import *
+from template.page import PageRange
 import pickle
 """
 BufferPageRange is a page range that stays on BufferPool.
@@ -47,15 +48,35 @@ BufferPool is a container that holds several BufferPageRanges
 
 class BufferPool:
 
-    def __init__(self):
+    def __init__(self, num_columns):
         self.pageRanges = [BufferPageRange()] * BUFFER_POOL_SIZE
-    
-    def isFull(self):
-        for pageRange in self.pageRanges:
-            if pageRange.isEmpty():
-                return False
-        return True
+        self.num_columns = num_columns
+        self.pageRanges[0].pageRange_Index = 0
+        self.pageRanges[0].pageRange = PageRange(self.num_columns)
 
+    def findPageRange(self, pageRange_index):
+        for Index in range(0, BUFFER_POOL_SIZE):
+            if self.pageRanges[Index].pageRange_Index == pageRange_index:
+                return self.pageRanges[Index]
+        return False
+    
+    def findEmptyPage(self):
+        return self.findPageRange(None)
+    
+    # Get the requested page range from buffer pool or load from file if not exists in bufferpool
+    def getPageRange(self, pageRange_index):
+        if not self.findPageRange(pageRange_index):
+            return self.load(pageRange_index)
+        else:
+            return self.findPageRange(pageRange_index)
+
+    # Get an empty page range or evict a page range if buffer pool is full
+    def getEmptyPage(self):
+        if not self.findEmptyPage():
+            return self.evict()
+        else:
+            return self.findEmptyPage()
+    
     # Flush all dirty page ranges before closing database
     def flushDirty(self):
         for pageRange in self.pageRanges:
@@ -65,22 +86,22 @@ class BufferPool:
 
     # Evict the least recently used page range(Could use MRU as well)//////////LRU unimplemented!
     def evict(self):
-        for pageRange in self.pageRanges:
-            if pageRange.isAvailable:
-                if pageRange.isDirty:
-                    pageRange.writeToFile()
-                pageRange.clear()
-                return True
-        return True
+        # wait for an available page range
+        while True:
+            for pageRange in self.pageRanges:
+                if pageRange.isAvailable:
+                    if pageRange.isDirty:
+                        pageRange.writeToFile()
+                    pageRange.clear()
+                    return pageRange
 
     # Load the wanted page range onto buffer pool
     def load(self, pageRange_index):
-        if self.isFull():
-            self.evict()
-        for pageRange in self.pageRanges:
-            if pageRange.isEmpty():
-                pageRange.pageRange_Index = pageRange_index
-                pageRange.readFromFile()
-                return True
+        emptyPageRange = self.getEmptyPage()
+        emptyPageRange.pageRange_Index = pageRange_index
+        emptyPageRange.readFromFile()
+        loadedPageRange = emptyPageRange
+        return loadedPageRange
+
 
     # +++ member functions in table class, similar here?
