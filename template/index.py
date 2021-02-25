@@ -27,12 +27,14 @@ class Index:
     #def Hashing(self,key):
         #return key % len(hash_table)
 
-    def insertIndex(self,column_index,key_val,rid):
-        if(self.indices[column_index]== None):
-            self.indices[column_index]=dict() #make a dictionary {key val:rid}
+    def insertIndex(self, primary_key, rid):
+        if(self.indices[self.table.key]== None):
+            self.indices[self.table.key]=dict() #make a dictionary {key val:rid}
 
-        self.indices[column_index][key_val]=rid  
-        
+        self.indices[self.table.key][primary_key]=rid  
+    
+    def removeIndex(self, primary_key):
+        del self.indices[self.table.key][primary_key]
     """
     # returns the location of all records with the given value on column "column"
     """
