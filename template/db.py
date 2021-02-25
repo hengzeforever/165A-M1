@@ -28,8 +28,8 @@ class Database():
             pass
 
     def close(self):
-        for table in self.tables:
-            table.bufferpool.flushDirty()
+        for table_name in self.tables:
+            self.tables[table_name].bufferpool.flushDirty()
         with open('database', 'wb') as dbfile:
             pickle.dump(self.tables, dbfile, pickle.HIGHEST_PROTOCOL)
 
