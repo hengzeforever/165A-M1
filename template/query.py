@@ -84,6 +84,7 @@ class Query:
         
         bufferPageRange.dirty = 1
         bufferPageRange.pin -= 1
+        self.table.index.removeIndex(primary_key)
         return True
 
 
@@ -131,7 +132,7 @@ class Query:
             curBasePage.colPages[i].write(baseRecord[i])
         
         # Update table's private variables
-        self.table.index.insertIndex(self.table.key,columns[self.table.key],baseRID)
+        self.table.index.insertIndex(columns[self.table.key], baseRID)
         self.table.baseRID += 1
         
         # Update bufferPageRange
@@ -311,11 +312,18 @@ class Query:
         self.table.tailPage_lib[tailRID] = [pageRange_Index, tailPageList_index, offset_index]
         self.table.tailRID += 1
 
-        #Update index 2/22
+        #Update index 2/24
+        '''
         for col_num, col in enumerate(columns):
-            if col != None: 
-                self.table.index.indices[col_num][col]=baseRID
-        
+            if self.table.index.indices[col_num] != None: 
+                if col != None: 
+                    if col_num == self.table.key:
+                        self.table.index.indices[col_num][col]=baseRID
+                    elif(self.table.index.indices[col_num][col]):
+                        self.table.index.indices[col_num][col].append(baseRID)
+                    else:
+                        self.table.index.indices[col_num][col]=[baseRID]
+        '''
         # Update buffer page range
         bufferPageRange.dirty = 1
         bufferPageRange.pin -= 1
