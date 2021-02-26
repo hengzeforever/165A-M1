@@ -3,6 +3,7 @@ from template.index import Index
 from template.config import *
 from template.bufferpool import BufferPool
 from time import time
+import queue
 
 '''
 The Table class provides the core of our relational storage functionality. All columns are
@@ -44,6 +45,10 @@ class Table:
         # baseRID and tailRID are initialized to 1, 0 is for deleted record
         self.baseRID = 1
         self.tailRID = 1
+
+        #merge
+        self.mergeQ = queue.Queue()
+        self.deallocateQ = queue.Queue()
         '''
         # Unused bit vector definition for RID(May be used in M2 M3):
         # RID is a list of integer storing relevant info about a record(location, deleted)
@@ -125,6 +130,24 @@ class Table:
                 value.to_bytes(INT_SIZE, 'big')
         return True
 
+    # Commit available associated tail page
+    def commitTailPage(self):
+        for pageRange_index in range(self.num_PageRanges):
+            bufferPageRange = self.bufferpool.getPageRange(pageRange_index)
+            if bufferPageRange.isAvailable():
+                for basePage_index in range(len(bufferPageRange.pageRange.basePageList)):
+                    associatedTailPage = {}
+                    for baseRID in range(basePage_index*512+1+16*512*pageRange_index, \
+                        (basePage_index+1)*512+1+16*512*pageRange_index):
+                        baseRecord = self.baseRIDToRecord(baseRID)
+                        if tailRID != 0:
+                            tailRID = baseRecord[INDIRECTION_COLUMN]
+                            tailRecord = self.tailRIDToRecord(tailRID)
+                            associatedTailPage[baseRID] = tailRecord
+                    self.mergeQ.put(associatedTailPage)
+
     def merge(self):
-        pass
- 
+        while True:
+            if not self.mergeQ.empty():
+                associatedTailPage = mergeQ.get()
+                mergedBasePage = 
