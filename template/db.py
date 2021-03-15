@@ -17,21 +17,26 @@ class Database():
 
     def __init__(self):
         self.tables = {}
+        self.oldPath = None
         pass
 
     def open(self, workPath):
-        if path.exists('database'):
-            with open('database', 'rb') as dbfile:
-                self.tables = pickle.load(dbfile)   
-        else:
-            # Do nothing if database file has not been generated
-            pass
+        if path.exists(workPath):
+            self.oldPath = getcwd()
+            chdir(workPath)
+            if path.exists('database'):
+                with open('database', 'rb') as dbfile:
+                    self.tables = pickle.load(dbfile)
 
     def close(self):
         for table_name in self.tables:
+            self.tables[table_name].lock = None
+            self.tables[table_name].lock_manager.lock = None
             self.tables[table_name].bufferpool.flushDirty()
         with open('database', 'wb') as dbfile:
             pickle.dump(self.tables, dbfile, pickle.HIGHEST_PROTOCOL)
+        
+        chdir(self.oldPath)
 
     """
     # Creates a new table
@@ -41,11 +46,10 @@ class Database():
     """
     def create_table(self, name, num_columns, key):
         if name in self.tables:
-            return self.get_table(name)
-        else:
-            table = Table(name, num_columns, key)
-            self.tables[name]=table
-            return table
+            del self.tables[name]
+        table = Table(name, num_columns, key)
+        self.tables[name]=table
+        return table
 
     """
     # Deletes the specified table

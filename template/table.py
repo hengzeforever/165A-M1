@@ -2,6 +2,7 @@ from template.page import PageRange
 from template.index import Index
 from template.config import *
 from template.bufferpool import BufferPool
+from template.lockmanager import LockManager
 from copy import deepcopy
 import threading
 import time
@@ -104,17 +105,19 @@ class Table:
         self.index = Index(self)
         self.num_PageRanges = 1
 
+        self.lock_manager=LockManager()
+
         # baseRID and tailRID are initialized to 1, 0 is for deleted record
         self.baseRID = 1
-        self.tailRID = 1
+        self.tailRID = MAX_TAIL_RECORD
 
         #merge
         self.mergeQ = []
         #self.deallocateQ = []
         self.mergedCount = 0
 
-        thread = threading.Thread(target=self.merge, args=())
-        thread.daemon = True
+        self.lock = threading.Lock()
+        thread = threading.Thread(target=self.merge, daemon=True)
         thread.start()
 
     def create_NewPageRange(self):
@@ -136,10 +139,24 @@ class Table:
         
         bufferPageRange = self.bufferpool.getPageRange(pageRange_index)
         baseRecord = []
+
+        tryNum = 0
+        if not self.lock_manager.acquire('R', baseRID):
+            print("baseRIDToRecord: cannot acquire lock", baseRID)
+            return False
+            tryNum += 1
+        
+        if tryNum > 0:
+            print("baseRIDToRecord: lock is acquired now", baseRID)
+            
         for i in range(INTERNAL_COL_NUM+self.num_columns):
             baseRecord.append(int.from_bytes(bufferPageRange.pageRange.basePageList[basePageList_index].colPages[i].data \
                 [offset_index*INT_SIZE:(offset_index+1)*INT_SIZE], 'big'))
-            
+        if not self.lock_manager.release('R', baseRID):
+            print("baseRIDToRecord: cannot release lock", baseRID)
+            print("baseRecord:", baseRecord)
+            return False
+        
         return baseRecord
 
     
@@ -152,9 +169,16 @@ class Table:
 
         bufferPageRange = self.bufferpool.getPageRange(pageRange_index)
         tailRecord = []
+
+        while not self.lock_manager.acquire('R', tailRID):
+            print("tailRIDToRecord: cannot acquire lock", tailRID)
+        
         for i in range(INTERNAL_COL_NUM+self.num_columns):
             tailRecord.append(int.from_bytes(bufferPageRange.pageRange.tailPageList[tailPageList_index].colPages[i].data \
                 [offset_index*INT_SIZE:(offset_index+1)*INT_SIZE], 'big'))
+        while not self.lock_manager.release('R', tailRID):
+            print("tailRIDToRecord: cannot release lock", tailRID)
+        
         return tailRecord
     
     # Overwrite a value in base record
@@ -165,9 +189,20 @@ class Table:
         offset_index = location[2]
 
         bufferPageRange = self.bufferpool.getPageRange(pageRange_index)
+
+        tryNum = 0
+        if not self.lock_manager.acquire('W', baseRID):
+            print("baseWriteByte: cannot acquire lock", baseRID)
+            return False
+            tryNum += 1
+        if tryNum > 0:
+            print("baseWriteByte: now lock is acquired", baseRID)
         bufferPageRange.pageRange.basePageList[basePageList_index] \
             .colPages[columnNum].data[offset_index*INT_SIZE:(offset_index+1)*INT_SIZE] = \
                 value.to_bytes(INT_SIZE, 'big')
+        if not self.lock_manager.release('W', baseRID):
+            print("baseWriteByte: cannot release lock", baseRID)
+            return False
         return True
 
     # Overwrite a value in tail record
@@ -178,9 +213,16 @@ class Table:
         offset_index = location[2]
 
         bufferPageRange = self.bufferpool.getPageRange(pageRange_index)
+
+        while not self.lock_manager.acquire('W', tailRID):
+            print("tailWriteByte: cannot acquire lock", tailRID)
+        
         bufferPageRange.pageRange.tailPageList[tailPageList_index] \
             .colPages[columnNum].data[offset_index*INT_SIZE:(offset_index+1)*INT_SIZE] = \
                 value.to_bytes(INT_SIZE, 'big')
+        while not self.lock_manager.release('W', tailRID):
+            print("tailWriteByte: cannot release lock", tailRID)
+        
         return True
 
     # Commit available associated tail page
@@ -197,23 +239,37 @@ class Table:
                 for offset_index in range(512):
                     # reverse iteration
                     tailRID = int.from_bytes(tailPage.colPages[RID_COLUMN].data[(511-offset_index)*INT_SIZE:(511-offset_index+1)*INT_SIZE], 'big')
-                    baseRID = self.tailRIDTOBaseRID[tailRID]
-                    if not baseRID in lastestApplied:
-                        lastestApplied[baseRID] = tailRID
-                        tailRecord = self.tailRIDToRecord(tailRID)
-                        baseRecord = self.baseRIDToRecord(baseRID)
-                        binarySchema = bin(baseRecord[SCHEMA_ENCODING_COLUMN])[2:]
-                        schema_encoding = "0" * (self.num_columns-len(binarySchema)) + binarySchema
-                        for i in range(self.num_columns):
-                            if schema_encoding[i] != "0":
-                                self.baseWriteByte(tailRecord[i+INTERNAL_COL_NUM], baseRID, i+INTERNAL_COL_NUM)
+                    if tailRID != 0:
+                        baseRID = self.tailRIDTOBaseRID[tailRID]
+                        if not baseRID in lastestApplied:
+                            lastestApplied[baseRID] = tailRID
+
+                            # Wait to get a tail record
+                            tailRecord = self.tailRIDToRecord(tailRID)
+                            while not tailRecord:
+                                print("cannot get Record now for merge!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                                tailRecord = self.tailRIDToRecord(tailRID)
+
+                            # Wait to get a base record
+                            baseRecord = self.baseRIDToRecord(baseRID)
+                            while not baseRecord:
+                                print("cannot get Record now for merge!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                                baseRecord = self.baseRIDToRecord(baseRID)
+                            
+                            binarySchema = bin(baseRecord[SCHEMA_ENCODING_COLUMN])[2:]
+                            schema_encoding = "0" * (self.num_columns-len(binarySchema)) + binarySchema
+                            for i in range(self.num_columns):
+                                if schema_encoding[i] != "0":
+                                    # Wait to write a base record column value
+                                    while not self.baseWriteByte(tailRecord[i+INTERNAL_COL_NUM], baseRID, i+INTERNAL_COL_NUM):
+                                        print("cannot write base record now for merge!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                                    
                 self.mergedCount += 1
             #print("merged count:", self.mergedCount)
             time.sleep(1)
 
 
     def continueMerge(self):
-        thread = threading.Thread(target=self.merge, args=())
-        thread.daemon = True
+        thread = threading.Thread(target=self.merge, daemon=True)
         thread.start()
 
